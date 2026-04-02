@@ -122,8 +122,8 @@ void	handle_msg(int fd)
 int	main(int ac, char **av)
 {
 	struct sockaddr_in	servaddr;
-	int					client_fd;
 	socklen_t			addr_len;
+	int					client_fd;
 	int					bytes;
 	int					fd;
 
@@ -136,12 +136,15 @@ int	main(int ac, char **av)
 	if (sock_fd < 0)
 		fatal_error();
 	max_fd = sock_fd;
+	
 	FD_ZERO(&afds);
 	FD_SET(sock_fd, &afds);
 	bzero(&servaddr, sizeof(servaddr));
+
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = htonl(2130706433);
 	servaddr.sin_port = htons(atoi(av[1]));
+	
 	if (bind(sock_fd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
 		fatal_error();
 	if (listen(sock_fd, SOMAXCONN) < 0)
