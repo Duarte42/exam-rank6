@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <netinet/ip.h>
+#include <sys/socket.h>
+#include <sys/select.h>
 
 int		g_id = 0;
 int		ids[65536];
@@ -90,7 +92,7 @@ void	add_client(int fd)
 	send_all(fd, buf_write);
 }
 
-void	rm_client(int fd)
+void	remove_client(int fd)
 {
 	sprintf(buf_write, "server: client %d just left\n", ids[fd]);
 	send_all(fd, buf_write);
@@ -156,29 +158,34 @@ int	main(int ac, char **av)
 		if (select(max_fd + 1, &rfds, &wfds, NULL, NULL) < 0)
 			fatal_error();
 		fd = 0;
-		while (fd <= max_fd)
+		while(fd <= max_fd)
 		{
-			if (FD_ISSET(fd, &rfds))
+			if(FD_ISSET(fd, &rfds))
 			{
-				if (fd == sock_fd)
+				if(sock_fd == fd)
 				{
 					addr_len = sizeof(servaddr);
 					client_fd = accept(sock_fd, (struct sockaddr *)&servaddr, &addr_len);
-					if (client_fd >= 0)
-						add_client(client_fd);
+					if(client_fd >= 0){
+						add_user(client_fd);
+						break;
+					}
 				}
 				else
 				{
 					bytes = recv(fd, buf_read, 1000, 0);
-					if (bytes <= 0)
-						rm_client(fd);
+					if (bytes <= 0){
+						remove_user(fd);
+						break;
+					}
 					else
 					{
 						buf_read[bytes] = 0;
 						msgs[fd] = str_join(msgs[fd], buf_read);
 						if (msgs[fd] == 0)
 							fatal_error();
-						handle_msg(fd);
+						else
+							handle_msg(fd);
 					}
 				}
 			}

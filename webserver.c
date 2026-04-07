@@ -8,15 +8,15 @@
 #include <netinet/in.h>
 #include <sys/select.h>
 
-int g_id = 0;
-char *msgs[1024];
-int ids[1024];
 int max_fd = 0;
 int sock_fd = 0;
+int g_id = 0;
+int ids[1024];
+char *msgs[1024];
 
-set_fd afds, wfds, rfds;
+fd_set afds, rfds, wfds;
 
-char buf_write[1001], buf_read[1001];
+char buf_read[1001], buf_write[1001];
 
 int extract_message(char **buf, char **msg)
 {
@@ -76,11 +76,9 @@ void send_all(int skip_fd, char *str)
 	int fd = 0;
 	while(fd <= max_fd)
 	{
-		if(FD_ISSET(fd, &afds) && FD_ISSET(fd, &wfds) && fd != skip_fd && fd != sock_fd);
-		{
+		if(FD_ISSET(fd, &afds) && FD_ISSET(fd, &wfds) && fd != skip_fd && fd != sock_fd)
 			send(fd, str, strlen(str), 0);
-		}
-		fd++; 
+		fd++;
 	}
 }
 
@@ -89,10 +87,11 @@ void add_user(int fd)
 	FD_SET(fd, &afds);
 	ids[fd] = g_id++;
 	msgs[fd] = NULL;
-	if(fd < max_fd)
+	if(max_fd < fd)
 		max_fd = fd;
 	sprintf(buf_write, "server: client %d connected\n", ids[fd]);
 	send_all(fd, buf_write);
+
 }
 
 void remove_user(int fd)
@@ -100,15 +99,16 @@ void remove_user(int fd)
 	sprintf(buf_write, "server: client %d disconnected\n", ids[fd]);
 	send_all(fd, buf_write);
 	free(msgs[fd]);
-	msgsg[fd] = NULL;
+	msgs[fd] = NULL;
 	FD_CLR(fd, &afds);
 	close(fd);
+	printf("removed user\n");
 }
 
 void handle_msg(int fd)
 {
-	int ret;
 	char *msg;
+	int ret;
 
 	while(1)
 	{
@@ -118,7 +118,6 @@ void handle_msg(int fd)
 			fatal_error();
 		if(ret == 0)
 			break;
-
 		sprintf(buf_write, "client %d: ", ids[fd]);
 		send_all(fd, buf_write);
 		send_all(fd, msg);
@@ -128,40 +127,53 @@ void handle_msg(int fd)
 
 int main(int ac, char **av)
 {
-	struct sockaddr_in servaddr;
-	socklen_t addr_len;
-	int client_fd = -1;
-	int fd = -1;
-	int bytes = 0;
-
-	if(ac != 2)
+	if(ac !=2)
 	{
-		deu merda;
+		write(2, "Wrong number of argumts\n", 25);
 		exit(1);
 	}
+
+	int fd = 0;
+	int client_fd = 0;
+	int bytes = 0;
+	struct sockaddr_in servaddr;
+	socklen_t addr_len;
 
 	sock_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock_fd < 0)
 		fatal_error();
+	max_fd = sock_fd;
+
+	bzero(&servaddr, sizeof(servaddr));
 	FD_ZERO(&afds);
 	FD_SET(sock_fd, &afds);
-	bzero(servaddr, sizeof(servaddr));
 
 	servaddr.sin_family = AF_INET; 
 	servaddr.sin_addr.s_addr = htonl(2130706433); //127.0.0.1
 	servaddr.sin_port = htons(atoi(av[1]));
-
-	if((bind(sock_fd, (const struct sockaddr *)&servaddr, sizeof(servaddr))) < 0)
+	
+	if(bind(sock_fd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+	{
+		printf("bind\n");
 		fatal_error();
-
-	if (listen(sockfd, 10) < 0)
+	}
+	if(listen(sock_fd, SOMAXCONN) < 0)
+	{
+		printf("listen\n");
 		fatal_error();
-
+	}
+	
 	while(1)
 	{
 		rfds = afds;
 		wfds = afds;
 		fd = 0;
+
+		if(select(max_fd + 1, &rfds, &wfds, NULL, NULL) < 0)
+		{
+			printf("select\n");
+			fatal_error();
+		}
 
 		while(fd <= max_fd)
 		{
@@ -171,27 +183,33 @@ int main(int ac, char **av)
 				{
 					addr_len = sizeof(servaddr);
 					client_fd = accept(sock_fd, (struct sockaddr *)&servaddr, &addr_len);
-					if(client_fd >= 0)
-						add_client(client_fd);
+					if(client_fd >= 0){
+						add_user(client_fd);
+						break;
+					}
 				}
-				else{
-						bytes = recv(fd, buf_read, 1000, 0);
-						if(bytes <= 0)
-							remove_user(fd);
+				else
+				{
+					bytes = recv(fd, buf_read, 1000, 0);
+					if (bytes <= 0){
+						remove_user(fd);
+						break;
+					}
+					else
+					{
+						buf_read[bytes] = 0;
+						msgs[fd] = str_join(msgs[fd], buf_read);
+						if (msgs[fd] == 0)
+							fatal_error();
 						else
-						{
-							buf_read[bytes] = 0;
-							msgs[fd] = str_join(msgs[fd], buf_read);
-
-							if(msgs[fd] == 0)
-								fatal_error();
-							handle_msg(buf_read);
-						}
+							handle_msg(fd);
+					}
 				}
 			}
 			fd++;
 		}
-
-		
 	}
+	
+
+	
 }
